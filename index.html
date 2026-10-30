@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Нейро-Студия</title>
+    
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="app.css">
+    <meta name="theme-color" content="#00e5ff">
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Нейро-Студия</h1>
+        
+        <div class="balance-card">
+            <span>Баланс:</span>
+            <span id="balance-amount">...</span> ⭐
+        </div>
+        
+        <button class="buy-btn" onclick="buyStars()">💎 Пополнить баланс</button>
+        
+        <div class="generator">
+            <select id="model">
+                <option value="image">Генерация картинки (10⭐)</option>
+                <option value="audio">Генерация музыки (15⭐)</option>
+            </select>
+            
+            <input type="text" id="prompt" placeholder="Что нарисовать или создать?">
+            <button onclick="generateMedia()" id="gen-btn">Сгенерировать ✨</button>
+        </div>
+        
+        <div id="loader" class="loader"></div>
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        // ⚠️ ЗАМЕНИ НА СВОЙ ДОМЕН BOTHOST
+        const SERVER_URL = "https://твой-домен.bothost.tech"; 
+        
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand(); // Раскрываем на весь экран
+
+        let currentBalance = 0;
+
+        // 1. Проверка баланса при запуске
+        async function checkBalance() {
+            if (!tg.initDataUnsafe.user) return;
+            try {
+                const res = await fetch(`${SERVER_URL}/api/balance`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: tg.initDataUnsafe.user.id })
+                });
+                const data = await res.json();
+                currentBalance = data.balance;
+                document.getElementById('balance-amount').innerText = currentBalance;
+            } catch(e) {
+                console.error("Ошибка загрузки баланса", e);
+            }
+        }
+
+        // 2. Пополнение (Вызывает окно оплаты Telegram)
+        function buyStars() {
+            if (!tg.initDataUnsafe.user) {
+                tg.showAlert("Ошибка авторизации Telegram");
+                return;
+            }
+            // Отправляем сигнал боту (через sendData), что мы хотим купить звезды
+            tg.sendData(JSON.stringify({ action: "buy_stars", amount: 50 })); 
+            tg.close(); // Закрываем Mini App, чтобы бот прислал счет
+        }
+
+        // 3. Генерация
+        async function generateMedia() {
+            const model = document.getElementById('model').value;
+            const prompt = document.getElementById('prompt').value;
+            const resultDiv = document.getElementById('result');
+            const loader = document.getElementById('loader');
+            const btn = document.getElementById('gen-btn');
+
+            if (!prompt) return tg.showAlert("Напиши запрос!");
+            if (currentBalance <= 0) return tg.showAlert("Недостаточно звезд! Пополните баланс.");
+
+            resultDiv.innerHTML = "";
+            loader.style.display = "block";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${SERVER_URL}/api/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        model: model, 
+                        prompt: prompt, 
+                        user_id: tg.initDataUnsafe.user.id 
+                    })
+                });
+                
+                const data = await res.json();
+                loader.style.display = "none";
+                btn.disabled = false;
+
+                if (data.error) {
+                    tg.showAlert("Ошибка: " + data.error);
+                } else {
+                    if (data.type === 'image') {
+                        resultDiv.innerHTML = `<img src="${data.url}" alt="Результат">`;
+                    } else {
+                        resultDiv.innerHTML = `<audio controls src="${data.url}"></audio>`;
+                    }
+                    // Обновляем баланс на экране
+                    currentBalance -= (model === 'image' ? 10 : 15);
+                    document.getElementById('balance-amount').innerText = currentBalance;
+                }
+            } catch (e) {
+                loader.style.display = "none";
+                btn.disabled = false;
+                tg.showAlert("Ошибка сети. Попробуйте позже.");
+            }
+        }
+
+        checkBalance();
+    </script>
+</body>
+</html>
